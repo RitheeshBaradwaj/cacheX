@@ -1,10 +1,15 @@
-#include "cacheX_client.h"
+#include "cacheX_client.hpp"
 
 #include <arpa/inet.h>
+#include <assert.h>
+#include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include "cacheX_protocol.hpp"
 
 int cacheX_connect(const char *host, int port) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -25,22 +30,28 @@ int cacheX_connect(const char *host, int port) {
 }
 
 int cacheX_set(int sock, const char *key, const char *value) {
-    char buffer[512];
-    snprintf(buffer, sizeof(buffer), "SET %s %s", key, value);
-    return send(sock, buffer, strlen(buffer), 0);
+    char request[MAX_PAYLOAD_SIZE], response[MAX_PAYLOAD_SIZE];
+    snprintf(request, sizeof(request), "SET %s %s", key, value);
+
+    printf("[DEBUG] Sending request: %s\n", request);  // Debug print
+
+    int result = send_request(sock, request);
+    if (result < 0 || receive_response(sock, response, sizeof(response)) < 0) {
+        perror("[ERROR] Failed to send SET command");
+    }
+
+    return result;
 }
 
 char *cacheX_get(int sock, const char *key) {
-    char buffer[256], response[1024];
-    snprintf(buffer, sizeof(buffer), "GET %s", key);
-    send(sock, buffer, strlen(buffer), 0);
+    char request[MAX_PAYLOAD_SIZE], response[MAX_PAYLOAD_SIZE];
+    snprintf(request, sizeof(request), "GET %s", key);
 
-    ssize_t bytes = recv(sock, response, sizeof(response) - 1, 0);
-    if (bytes > 0) {
-        response[bytes] = '\0';
-        return strdup(response);
+    if (send_request(sock, request) < 0 || receive_response(sock, response, sizeof(response)) < 0) {
+        return NULL;
     }
-    return NULL;
+
+    return strdup(response);
 }
 
 void cacheX_close(int sock) { close(sock); }

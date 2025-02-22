@@ -5,6 +5,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "cacheX_client.hpp"
+
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 6379
 #define NUM_CONNECTIONS 10000
@@ -17,9 +19,10 @@ void* client_thread(void* arg) {
     inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr);
     connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr));
 
-    char message[256];
+    char message[256], key[256], value[256];
     sprintf(message, "SET key_%ld value_%ld", (long)arg, (long)arg);
-    send(sock, message, strlen(message), 0);
+    sscanf(message, "SET %255s %255[^\n]", key, value);
+    cacheX_set(sock, key, value);
     close(sock);
     return NULL;
 }

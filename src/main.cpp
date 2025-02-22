@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "server.h"
+#include "server.hpp"
 
 int main() {
     std::cout << "CacheX Server Starting..." << std::endl;

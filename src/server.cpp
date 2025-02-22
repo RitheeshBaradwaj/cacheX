@@ -1,6 +1,7 @@
-#include "server.h"
+#include "server.hpp"
 
 #include <arpa/inet.h>
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -9,6 +10,8 @@
 #include <string.h>
 #include <sys/epoll.h>
 #include <unistd.h>
+
+#include "cacheX_protocol.hpp"
 
 typedef struct KeyValue {
     char *key;
@@ -71,32 +74,33 @@ int set_nonblocking(int sockfd) {
     return rv;
 }
 
-void handle_client_request(int client_fd) {
-    char buffer[1024];
-    ssize_t bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
-    if (bytes_received <= 0) {
+static int32_t handle_client_request(int client_fd) {
+    char request_payload[MAX_PAYLOAD_SIZE];
+
+    // Read structured request (response from client is like getting request from client)
+    int res = receive_response(client_fd, request_payload, sizeof(request_payload));
+    if (res < 0) {
+        fprintf(stderr, "[INFO] Client %d disconnected.\n", client_fd);
         close(client_fd);
-        return;
+        return -1;
     }
 
-    buffer[bytes_received] = '\0';  // Null-terminate the received data
-    printf("Client %d: %s\n", client_fd, buffer);
-
+    fprintf(stderr, "[DEBUG] Client %d request: %s\n", client_fd, request_payload);
     char command[10], key[256], value[256];
-    if (sscanf(buffer, "%9s %255s %255[^\n]", command, key, value) == 3 &&
+    if (sscanf(request_payload, "%9s %255s %255[^\n]", command, key, value) == 3 &&
         strcmp(command, "SET") == 0) {
         store_set_command(key, value);
-        // send(client_fd, "OK\n", 3, 0);
-    } else if (sscanf(buffer, "%9s %255s", command, key) == 2 && strcmp(command, "GET") == 0) {
+
+        // like send response to client
+        return send_request(client_fd, "OK");
+    } else if (sscanf(request_payload, "%9s %255s", command, key) == 2 &&
+               strcmp(command, "GET") == 0) {
         const char *result = fetch_get_command(key);
-        if (result) {
-            send(client_fd, result, strlen(result), 0);
-            // send(client_fd, "\n", 1, 0);
-        } else {
-            send(client_fd, "NULL\n", 5, 0);
-        }
+        fprintf(stderr, "[DEBUG] GET key: %s, Value: %s\n", key, result ? result : "NULL");
+        return send_request(client_fd, result ? result : "NULL");
     } else {
-        send(client_fd, "ERROR\n", 6, 0);
+        fprintf(stderr, "[ERROR] Invalid command from client %d\n", client_fd);
+        return send_request(client_fd, "ERROR");
     }
 }
 
@@ -136,11 +140,11 @@ void start_server() {
     event.data.fd = server_fd;
     epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &event);
 
-    while (1) {
+    while (true) {
         int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         for (int i = 0; i < num_events; i++) {
             if (events[i].data.fd == server_fd) {
-                // accept
+                // Accept new client
                 struct sockaddr_in client_addr = {};
                 socklen_t client_len = sizeof(client_addr);
                 int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
@@ -153,7 +157,17 @@ void start_server() {
                 epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &event);
                 printf("New client connected: %d\n", client_fd);
             } else {
-                handle_client_request(events[i].data.fd);
+                // Handle request for existing client
+                int client_fd = events[i].data.fd;
+                int err = handle_client_request(client_fd);
+                if (err < 0) {
+                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
+                } else {
+                    // Re-enable EPOLLIN so more requests can be processed
+                    event.events = EPOLLIN | EPOLLET;
+                    event.data.fd = client_fd;
+                    epoll_ctl(epoll_fd, EPOLL_CTL_MOD, client_fd, &event);
+                }
             }
         }
     }

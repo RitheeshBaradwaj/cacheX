@@ -2,7 +2,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cacheX_client.h"
+#include "cacheX_client.hpp"
+
+void print_usage() {
+    printf("\nAvailable commands:\n");
+    printf("  SET <key> <value>  - Store a value\n");
+    printf("  GET <key>         - Retrieve a value\n");
+    printf("  EXIT              - Close connection\n\n");
+}
 
 int main() {
     int sock = cacheX_connect("127.0.0.1", 6379);
@@ -11,28 +18,41 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    printf("Connected to cacheX server. Enter commands (SET key value | GET key | EXIT):\n");
+    printf("Connected to cacheX server. Type 'HELP' for available commands.\n");
 
     char command[512], key[256], value[256];
-    while (1) {
+    while (true) {
         printf("> ");
         fflush(stdout);
         if (!fgets(command, sizeof(command), stdin)) {
             printf("Error reading input. Exiting...\n");
             break;
         }
-        command[strcspn(command, "\n")] = 0;
+        command[strcspn(command, "\n")] = '\0';  // Ensure proper null termination
+        if (strlen(command) == 0) continue;      // Ignore empty input
 
         if (strcmp(command, "EXIT") == 0) break;
+        if (strcmp(command, "HELP") == 0) {
+            print_usage();
+            continue;
+        }
         if (sscanf(command, "SET %255s %255[^\n]", key, value) == 2) {
-            cacheX_set(sock, key, value);
-            printf("OK\n");
+            int rv = cacheX_set(sock, key, value);
+            if (rv < 0) {
+                printf("Error: Failed to send SET command\n");
+            } else {
+                printf("OK\n");
+            }
         } else if (sscanf(command, "GET %255s", key) == 1) {
             char *result = cacheX_get(sock, key);
-            printf("Server: %s\n", result ? result : "NULL");
-            free(result);
+            if (result) {
+                printf("Server: %s\n", result);
+                free(result);
+            } else {
+                printf("Error: Failed to retrieve key or key does not exist\n");
+            }
         } else {
-            printf("Invalid command\n");
+            printf("Invalid command. Type 'HELP' for available commands.\n");
         }
     }
 

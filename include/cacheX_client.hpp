@@ -1,5 +1,5 @@
-#ifndef CACHEX_CLIENT_H_
-#define CACHEX_CLIENT_H_
+#ifndef CACHEX_CLIENT_HPP_
+#define CACHEX_CLIENT_HPP_
 
 // Initialize the client connection
 int cacheX_connect(const char *host, int port);
@@ -13,4 +13,4 @@ char *cacheX_get(int sock, const char *key);
 // Close the connection
 void cacheX_close(int sock);
 
-#endif  // CACHEX_CLIENT_H_
+#endif  // CACHEX_CLIENT_HPPß_

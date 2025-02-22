@@ -26,10 +26,11 @@ install(TARGETS cacheX_client cacheX_client_static cacheX_cli
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin
 )
-install(FILES include/cacheX_client.h DESTINATION include)
+# install(FILES include/cacheX_client.hpp DESTINATION include)
 
 # Enable testing
 enable_testing()
 add_executable(test_client tests/client.cpp src/server.cpp)
+target_link_libraries(test_client cacheX_client)
 target_include_directories(test_client PRIVATE include)
 add_test(NAME TestServer COMMAND test_client)
