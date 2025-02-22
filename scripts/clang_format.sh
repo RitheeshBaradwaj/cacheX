@@ -1,3 +1,3 @@
 #!/bin/bash
 
-clang-format -i src/*.cpp src/*.c tests/* src/client/*
+clang-format -i src/*.cpp tests/* src/client/*

@@ -17,7 +17,10 @@ int main() {
     while (1) {
         printf("> ");
         fflush(stdout);
-        fgets(command, sizeof(command), stdin);
+        if (!fgets(command, sizeof(command), stdin)) {
+            printf("Error reading input. Exiting...\n");
+            break;
+        }
         command[strcspn(command, "\n")] = 0;
 
         if (strcmp(command, "EXIT") == 0) break;

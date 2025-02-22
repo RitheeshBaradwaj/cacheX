@@ -10,7 +10,6 @@
 #include <sys/epoll.h>
 #include <unistd.h>
 
-// Simple hash table implementation
 typedef struct KeyValue {
     char *key;
     char *value;
@@ -81,18 +80,18 @@ void handle_client_request(int client_fd) {
     }
 
     buffer[bytes_received] = '\0';  // Null-terminate the received data
-    fprintf("Client %d: %s\n", client_fd, buffer);
+    printf("Client %d: %s\n", client_fd, buffer);
 
     char command[10], key[256], value[256];
     if (sscanf(buffer, "%9s %255s %255[^\n]", command, key, value) == 3 &&
         strcmp(command, "SET") == 0) {
         store_set_command(key, value);
-        send(client_fd, "OK\n", 3, 0);
+        // send(client_fd, "OK\n", 3, 0);
     } else if (sscanf(buffer, "%9s %255s", command, key) == 2 && strcmp(command, "GET") == 0) {
         const char *result = fetch_get_command(key);
         if (result) {
             send(client_fd, result, strlen(result), 0);
-            send(client_fd, "\n", 1, 0);
+            // send(client_fd, "\n", 1, 0);
         } else {
             send(client_fd, "NULL\n", 5, 0);
         }
@@ -107,7 +106,8 @@ void start_server() {
         die(__LINE__, "%s: socket(), errno: %d", __func__, errno);
     }
 
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+    int level = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &(level), sizeof(level));
     set_nonblocking(server_fd);
 
     // bind
@@ -128,7 +128,7 @@ void start_server() {
         die(__LINE__, "%s: listen(), errno: %d", __func__, errno);
     }
 
-    fprintf("Server started on port %d, ready for GET/SET...\n", PORT);
+    printf("Server started on port %d, ready for GET/SET...\n", PORT);
 
     struct epoll_event event, events[MAX_EVENTS];
     int epoll_fd = epoll_create1(0);
@@ -151,7 +151,7 @@ void start_server() {
                 event.events = EPOLLIN | EPOLLET;
                 event.data.fd = client_fd;
                 epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &event);
-                fprintf("New client connected: %d\n", client_fd);
+                printf("New client connected: %d\n", client_fd);
             } else {
                 handle_client_request(events[i].data.fd);
             }

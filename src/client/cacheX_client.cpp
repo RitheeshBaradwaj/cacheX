@@ -10,7 +10,7 @@ int cacheX_connect(const char *host, int port) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock == -1) return -1;
 
-    struct sockaddr_in server_addr = {0};
+    struct sockaddr_in server_addr = {};
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(port);
 
