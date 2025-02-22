@@ -8,7 +8,9 @@ set(CMAKE_CXX_FLAGS "-O3 -Wall -Wextra -pedantic")
 add_executable(cacheX src/main.cpp src/server.c)
 target_include_directories(cacheX PRIVATE include)
 
-# enable_testing()
-# add_executable(test_server tests/test_server.cpp src/server.c)
-# target_include_directories(test_server PRIVATE include)
-# add_test(NAME TestServer COMMAND test_server)
+add_executable(cacheX_client src/client/cacheX_client.c)
+
+enable_testing()
+add_executable(test_client tests/client.c src/server.c)
+target_include_directories(test_client PRIVATE include)
+add_test(NAME TestServer COMMAND test_client)
