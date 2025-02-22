@@ -10,7 +10,9 @@ extern "C" {
 #define PORT 6379
 #define MAX_EVENTS 10000
 #define BACKLOG 10000
-#define HASH_TABLE_SIZE 10007  // Prime number for better hashing
+
+// https://stackoverflow.com/a/70516602
+#define HASH_TABLE_SIZE 10007  //  Prime number for better hashing
 
 void start_server();
 void handle_client_request(int client_fd);

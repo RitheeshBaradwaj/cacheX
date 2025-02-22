@@ -1,8 +1,23 @@
 #!/bin/bash
 
-sudo rm -rf build/
+clean_build=false
 
-mkdir build && cd build
+while getopts "c" opt; do
+  case $opt in
+    c)
+      clean_build=true
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+  esac
+done
+
+if $clean_build; then
+  sudo rm -rf build/
+fi
+
+(mkdir build || true ) && cd build
 cmake ..
 make
 sudo make install 
