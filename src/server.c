@@ -22,12 +22,11 @@ unsigned long hash_function(const char *str) {
     unsigned long hash = 5381;
     int c;
     while ((c = *str++)) {
-        hash = ((hash << 5) + hash) + c;
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
     }
     return hash % HASH_TABLE_SIZE;
 }
 
-// Store a key-value pair
 void store_set_command(const char *key, const char *value) {
     unsigned long index = hash_function(key);
 
@@ -39,7 +38,6 @@ void store_set_command(const char *key, const char *value) {
     hash_table[index] = new_pair;
 }
 
-// Fetch a value by key
 const char *fetch_get_command(const char *key) {
     unsigned long index = hash_function(key);
     KeyValue *entry = hash_table[index];
@@ -59,7 +57,6 @@ int set_nonblocking(int sockfd) {
     return fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
 }
 
-// Handle client requests
 void handle_client_request(int client_fd) {
     char buffer[1024];
     ssize_t bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
@@ -90,7 +87,6 @@ void handle_client_request(int client_fd) {
     }
 }
 
-// Start the TCP server
 void start_server() {
     int server_fd, epoll_fd, num_events, client_fd, i;
     struct sockaddr_in server_addr, client_addr;
