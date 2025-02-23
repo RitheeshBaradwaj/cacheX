@@ -18,7 +18,7 @@ if $clean_build; then
 fi
 
 (mkdir build || true ) && cd build
-cmake ..
+cmake -DCMAKE_BUILD_TYPE=Debug ..
 make
 sudo make install 
 cd ..

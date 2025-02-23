@@ -5,6 +5,9 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "-O3 -Wall -Wextra -pedantic")
 
+set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_CXX_FLAGS_DEBUG "-g")
+
 # Build the cacheX server
 add_executable(cacheX src/main.cpp src/server.cpp)
 target_include_directories(cacheX PRIVATE include)

@@ -35,10 +35,20 @@ void store_set_command(const char *key, const char *value) {
     unsigned long index = hash_function(key);
 
     KeyValue *new_pair = (KeyValue *)malloc(sizeof(KeyValue));
+    if (!new_pair) {
+        fprintf(stderr, "[ERROR] Memory allocation failed for KeyValue\n");
+        return;
+    }
+
     new_pair->key = strdup(key);
     new_pair->value = strdup(value);
-    new_pair->next = hash_table[index];
+    if (!new_pair->key || !new_pair->value) {
+        fprintf(stderr, "[ERROR] Memory allocation failed for key/value\n");
+        free(new_pair);
+        return;
+    }
 
+    new_pair->next = hash_table[index];
     hash_table[index] = new_pair;
 }
 
@@ -70,7 +80,6 @@ static int set_nonblocking(int sockfd) {
     int flags = fcntl(sockfd, F_GETFL, 0);  // get the flags
     if (errno) {
         die(__LINE__, "%s: fcntl(), errno: %d", __func__, errno);
-        return;
     }
 
     int rv = fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);  // modify and set the flags
