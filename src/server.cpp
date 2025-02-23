@@ -65,17 +65,23 @@ static void die(int line_number, const char *format, ...) {
     exit(1);
 }
 
-int set_nonblocking(int sockfd) {
-    int flags = fcntl(sockfd, F_GETFL, 0);                // get the flags
+static int set_nonblocking(int sockfd) {
+    errno = 0;
+    int flags = fcntl(sockfd, F_GETFL, 0);  // get the flags
+    if (errno) {
+        die(__LINE__, "%s: fcntl(), errno: %d", __func__, errno);
+        return;
+    }
+
     int rv = fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);  // modify and set the flags
-    if (rv) {
+    if (errno) {
         die(__LINE__, "%s: fcntl(), errno: %d", __func__, errno);
     }
     return rv;
 }
 
 static int32_t handle_client_request(int client_fd) {
-    char request_payload[MAX_PAYLOAD_SIZE];
+    char request_payload[kMaxPayloadSize];
 
     // Read structured request (response from client is like getting request from client)
     int res = receive_response(client_fd, request_payload, sizeof(request_payload));

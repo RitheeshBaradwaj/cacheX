@@ -30,7 +30,7 @@ int cacheX_connect(const char *host, int port) {
 }
 
 int cacheX_set(int sock, const char *key, const char *value) {
-    char request[MAX_PAYLOAD_SIZE], response[MAX_PAYLOAD_SIZE];
+    char request[kMaxPayloadSize], response[kMaxPayloadSize];
     snprintf(request, sizeof(request), "SET %s %s", key, value);
 
     printf("[DEBUG] Sending request: %s\n", request);  // Debug print
@@ -44,7 +44,7 @@ int cacheX_set(int sock, const char *key, const char *value) {
 }
 
 char *cacheX_get(int sock, const char *key) {
-    char request[MAX_PAYLOAD_SIZE], response[MAX_PAYLOAD_SIZE];
+    char request[kMaxPayloadSize], response[kMaxPayloadSize];
     snprintf(request, sizeof(request), "GET %s", key);
 
     if (send_request(sock, request) < 0 || receive_response(sock, response, sizeof(response)) < 0) {
