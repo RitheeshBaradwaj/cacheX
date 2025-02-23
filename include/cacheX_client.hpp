@@ -1,6 +1,8 @@
 #ifndef CACHEX_CLIENT_HPP_
 #define CACHEX_CLIENT_HPP_
 
+#include <string>
+
 // Initialize the client connection
 int cacheX_connect(const char *host, int port);
 
@@ -8,7 +10,7 @@ int cacheX_connect(const char *host, int port);
 int cacheX_set(int sock, const char *key, const char *value);
 
 // Send a GET command
-char *cacheX_get(int sock, const char *key);
+std::string cacheX_get(int sock, const char *key);
 
 // Close the connection
 void cacheX_close(int sock);

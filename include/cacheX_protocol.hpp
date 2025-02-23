@@ -11,98 +11,69 @@
 constexpr size_t kHeaderSize = 4;
 constexpr size_t kMaxPayloadSize = 32 * 1024 * 1024;  // 32 << 20 (32MB)
 
-struct CacheXMessage {
-    uint32_t length;                // Payload size
-    char payload[kMaxPayloadSize];  // Data buffer
-};
-
-static inline int32_t read_all(int fd, char *buf, size_t n) {
+static inline int32_t read_all(int fd, uint8_t *buf, size_t n) {
     size_t total_read = 0;
+    errno = 0;
     while (total_read < n) {
-        ssize_t bytes = recv(fd, buf + total_read, n - total_read, 0);
-        if (bytes <= 0) return -1;  // error, or unexpected EOF
+        ssize_t bytes = recv(fd, buf + total_read, n - total_read, MSG_DONTWAIT);
+        if (bytes <= 0) {
+            fprintf(stderr, "Device %d: %s\n", fd, errno == 0 ? "EOF" : "read() error");
+            return -1;
+        }
         total_read += bytes;
     }
     return 0;
 }
 
-static inline int32_t write_all(int fd, const char *buf, size_t n) {
+static inline int32_t write_all(int fd, const uint8_t *buf, size_t n) {
     size_t total_written = 0;
+    errno = 0;
     while (total_written < n) {
         ssize_t bytes = send(fd, buf + total_written, n - total_written, 0);
-        if (bytes <= 0) return -1;  // error
+        if (bytes <= 0) {
+            fprintf(stderr, "Device %d: %s\n", fd, errno == 0 ? "EOF" : "write() error");
+            return -1;
+        }
         total_written += bytes;
     }
     return 0;
 }
 
-static inline void encode_request(CacheXMessage *msg, const char *data) {
-    msg->length = strlen(data);
-    if (msg->length > kMaxPayloadSize) {
-        // TODO: Reject the request!!
-        fprintf(stderr, "Payload too large! Truncating to %ld bytes.\n", kMaxPayloadSize);
-        msg->length = kMaxPayloadSize;
-    }
-    memcpy(msg->payload, data, msg->length);
+// Append to the back
+static void buffer_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len) {
+    buf.insert(buf.end(), data, data + len);
 }
 
-static inline uint32_t decode_response(CacheXMessage *msg, char *output, size_t max_output_size) {
-    size_t len = msg->length;
-
-    if (len >= max_output_size) {  // Prevent overflow
-        fprintf(stderr, "Received payload too large! Truncating.\n");
-        len = max_output_size - 1;
-    }
-
-    memcpy(output, msg->payload, len);
-    output[len] = '\0';
-    return len;
+// Remove from the front
+inline void buffer_consume(std::vector<uint8_t> &buf, size_t n) {
+    buf.erase(buf.begin(), buf.begin() + n);
 }
 
-static inline int32_t send_request(int fd, const char *data) {
-    CacheXMessage request;
-    encode_request(&request, data);
-
-    char buffer[kHeaderSize + kMaxPayloadSize];
-    memcpy(buffer, &request.length, kHeaderSize);
-    memcpy(buffer + kHeaderSize, request.payload, request.length);
-
-    errno = 0;
-    int32_t err = write_all(fd, buffer, kHeaderSize + request.length);
-    if (err) {
-        fprintf(stderr, "Device %d: %s\n", fd, errno == 0 ? "EOF" : "write() error");
-        return err;
+static inline int32_t send_request(int fd, const uint8_t *req, size_t len) {
+    if (len > kMaxPayloadSize) {
+        return -1;
     }
-
-    return err;
+    std::vector<uint8_t> wbuf;
+    buffer_append(wbuf, (const uint8_t *)&len, kHeaderSize);
+    buffer_append(wbuf, req, len);
+    return write_all(fd, wbuf.data(), wbuf.size());
 }
 
-static inline int32_t receive_response(int fd, char *output, size_t max_output_size) {
-    CacheXMessage response;
-    errno = 0;
-
-    // Read response header
-    int32_t err = read_all(fd, (char *)&response.length, kHeaderSize);
-    if (err) {
-        fprintf(stderr, "Device %d: %s\n", fd, errno == 0 ? "EOF" : "read() error");
-        return err;
-    }
-
-    if (response.length > kMaxPayloadSize) {
-        // response.length = kMaxPayloadSize;
-        fprintf(stderr, "Device %d: Invalid payload length. Supported: %ld, Received: %u\n", fd,
-                kMaxPayloadSize, response.length);
+static inline int32_t receive_response(int fd, std::vector<uint8_t> &response_buffer) {
+    // 4-byte header to read payload length
+    uint32_t len = 0;
+    if (read_all(fd, reinterpret_cast<uint8_t *>(&len), kHeaderSize) < 0) {
+        fprintf(stderr, "Device %d: Failed to read response header.\n", fd);
         return -1;
     }
 
-    // Read response payload
-    err = read_all(fd, response.payload, response.length);
-    if (err) {
-        fprintf(stderr, "read() error\n");
-        return err;
+    if (len > kMaxPayloadSize) {
+        fprintf(stderr, "Device %d: Invalid payload length. Supported: %ld, Received: %u\n", fd,
+                kMaxPayloadSize, len);
+        return -1;
     }
-
-    return decode_response(&response, output, max_output_size);
+    response_buffer.resize(len);
+    return read_all(fd, response_buffer.data(), len);
 }
 
 #endif  // CACHEX_PROTOCOL_HPP_

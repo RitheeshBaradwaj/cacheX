@@ -1,58 +1,70 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <iostream>
+#include <string>
 
 #include "cacheX_client.hpp"
 
 void print_usage() {
-    printf("\nAvailable commands:\n");
-    printf("  SET <key> <value>  - Store a value\n");
-    printf("  GET <key>         - Retrieve a value\n");
-    printf("  EXIT              - Close connection\n\n");
+    std::cout << "\nAvailable commands:\n"
+              << "  SET <key> <value>  - Store a value\n"
+              << "  GET <key>         - Retrieve a value\n"
+              << "  EXIT              - Close connection\n\n";
 }
 
 int main() {
     int sock = cacheX_connect("127.0.0.1", 6379);
     if (sock == -1) {
-        printf("Failed to connect to cacheX server\n");
+        std::cerr << "Failed to connect to CacheX server\n";
         return EXIT_FAILURE;
     }
 
-    printf("Connected to cacheX server. Type 'HELP' for available commands.\n");
+    std::cout << "Connected to cacheX server. Type 'HELP' for available commands.\n";
 
-    char command[512], key[256], value[256];
+    std::string input, key, value;
     while (true) {
-        printf("> ");
-        fflush(stdout);
-        if (!fgets(command, sizeof(command), stdin)) {
-            printf("Error reading input. Exiting...\n");
-            break;
-        }
-        command[strcspn(command, "\n")] = '\0';  // Ensure proper null termination
-        if (strlen(command) == 0) continue;      // Ignore empty input
+        std::cout << "> ";
+        std::getline(std::cin, input);
 
-        if (strcmp(command, "EXIT") == 0) break;
-        if (strcmp(command, "HELP") == 0) {
+        if (input.empty()) continue;
+
+        if (input == "EXIT") break;
+        if (input == "HELP") {
             print_usage();
             continue;
         }
-        if (sscanf(command, "SET %255s %255[^\n]", key, value) == 2) {
-            int rv = cacheX_set(sock, key, value);
-            if (rv < 0) {
-                printf("Error: Failed to send SET command\n");
+
+        size_t space_pos = input.find(' ');
+        if (space_pos != std::string::npos) {
+            std::string command = input.substr(0, space_pos);
+            std::string rest = input.substr(space_pos + 1);
+
+            if (command == "SET") {
+                size_t value_pos = rest.find(' ');
+                if (value_pos != std::string::npos) {
+                    key = rest.substr(0, value_pos);
+                    value = rest.substr(value_pos + 1);
+
+                    int rv = cacheX_set(sock, key.c_str(), value.c_str());
+                    if (rv < 0) {
+                        std::cerr << "Error: Failed to send SET command\n";
+                    } else {
+                        std::cout << "OK\n";
+                    }
+                } else {
+                    std::cerr << "Invalid SET command format. Use: SET <key> <value>\n";
+                }
+            } else if (command == "GET") {
+                key = rest;
+                std::string result = cacheX_get(sock, key.c_str());
+                if (result != "ERROR") {
+                    std::cout << "Server: " << result << "\n";
+                } else {
+                    std::cerr << "Error: Failed to retrieve key or key does not exist\n";
+                }
             } else {
-                printf("OK\n");
-            }
-        } else if (sscanf(command, "GET %255s", key) == 1) {
-            char *result = cacheX_get(sock, key);
-            if (result) {
-                printf("Server: %s\n", result);
-                free(result);
-            } else {
-                printf("Error: Failed to retrieve key or key does not exist\n");
+                std::cerr << "Invalid command. Type 'HELP' for available commands.\n";
             }
         } else {
-            printf("Invalid command. Type 'HELP' for available commands.\n");
+            std::cerr << "Invalid command. Type 'HELP' for available commands.\n";
         }
     }
 
