@@ -10,6 +10,7 @@
 
 constexpr size_t kHeaderSize = 4;
 constexpr size_t kMaxPayloadSize = 32 * 1024 * 1024;  // 32 << 20 (32MB)
+constexpr size_t kMaxArgs = 200 * 1000;
 
 static inline int32_t read_all(int fd, uint8_t *buf, size_t n) {
     size_t total_read = 0;
@@ -40,7 +41,7 @@ static inline int32_t write_all(int fd, const uint8_t *buf, size_t n) {
 }
 
 // Append to the back
-static void buffer_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len) {
+static inline void buffer_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len) {
     buf.insert(buf.end(), data, data + len);
 }
 
