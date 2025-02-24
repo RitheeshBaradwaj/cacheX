@@ -7,10 +7,10 @@
 int cacheX_connect(const char *host, int port);
 
 // Send a SET command
-int cacheX_set(int sock, const char *key, const char *value);
+int cacheX_set(int sock, const std::string &key, const std::string &value);
 
 // Send a GET command
-std::string cacheX_get(int sock, const char *key);
+std::string cacheX_get(int sock, const std::string &ey);
 
 // Close the connection
 void cacheX_close(int sock);

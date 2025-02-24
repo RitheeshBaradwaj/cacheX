@@ -11,11 +11,16 @@
 #include <sys/epoll.h>
 #include <unistd.h>
 
+#include <numeric>
 #include <string>
+#include <unordered_map>
 
 #include "cacheX_protocol.hpp"
 
 static std::vector<Conn *> fd2conn;
+
+// TODO: Remove this
+static std::unordered_map<std::string, std::string> g_data;
 
 typedef struct KeyValue {
     char *key;
@@ -102,6 +107,25 @@ static int set_nonblocking(int sockfd) {
     return rv;
 }
 
+static void process_request(std::vector<std::string> &cmd, Response &out) {
+    if (cmd.size() == 2 && cmd[0] == "GET") {
+        auto it = g_data.find(cmd[1]);
+        if (it == g_data.end()) {
+            out.status = RES_NX;
+            return;
+        } else {
+            out.data.assign(it->second.begin(), it->second.end());
+        }
+    } else if (cmd.size() == 3 && cmd[0] == "SET") {
+        g_data[cmd[1]] = std::move(cmd[2]);
+    } else if (cmd.size() == 2 && cmd[0] == "DEL") {
+        g_data.erase(cmd[1]);
+    } else {
+        out.status = RES_ERR;
+        fprintf(stderr, "[ERROR] Invalid command.\n");
+    }
+}
+
 static void handle_write(Conn *conn) {
     errno = 0;
     if (conn->outgoing.size() > 0) {
@@ -133,10 +157,6 @@ static bool handle_client_request(Conn *conn) {
     // }
     // fprintf(stderr, "\n");
 
-    // while (!conn->incoming.empty() && conn->incoming[0] == 0) {
-    //     buffer_consume(conn->incoming, 1);
-    // }
-
     if (conn->incoming.size() < kHeaderSize) {
         fprintf(stderr, "[ERROR] Insufficient data for header parsing.\n");
         return false;
@@ -165,45 +185,31 @@ static bool handle_client_request(Conn *conn) {
         return false;
     }
 
-    std::vector<uint8_t> request(conn->incoming.begin() + kHeaderSize,
-                                 conn->incoming.begin() + kHeaderSize + len);
-    std::string command(request.begin(), request.end());
-    fprintf(stderr, "[DEBUG] Client %d (len: %d) request: %s\n", conn->fd, len, command.c_str());
-
-    // Process SET command
-    if (command.compare(0, 4, "SET ") == 0) {
-        size_t space_pos = command.find(' ', 4);
-        if (space_pos != std::string::npos) {
-            store_set_command(command.substr(4, space_pos - 4).c_str(),
-                              command.substr(space_pos + 1).c_str());
-
-            // Generate Response
-            uint32_t response_len = 2;
-            buffer_append(conn->outgoing, reinterpret_cast<const uint8_t *>(&response_len),
-                          kHeaderSize);
-            buffer_append(conn->outgoing, reinterpret_cast<const uint8_t *>("OK"), response_len);
-        }
-    }
-    // Process GET command
-    else if (command.compare(0, 4, "GET ") == 0) {
-        const char *value = fetch_get_command(command.substr(4).c_str());
-
-        // Generate Response
-        const char *response = value ? value : "NULL";
-        uint32_t response_len = strlen(response);
-        buffer_append(conn->outgoing, reinterpret_cast<const uint8_t *>(&response_len),
-                      kHeaderSize);
-        buffer_append(conn->outgoing, reinterpret_cast<const uint8_t *>(response), response_len);
-    } else {
-        fprintf(stderr, "[ERROR] Invalid command from Client %d.\n", conn->fd);
+    const uint8_t *request = &conn->incoming[kHeaderSize];
+    std::vector<std::string> command;
+    if (parse_request(request, len, command) < 0) {
+        msg(__LINE__, "%s: Bad request");
         conn->want_close = true;
         return false;
     }
+    std::string result = std::accumulate(
+        command.begin(), command.end(), std::string(),
+        [](const std::string &a, const std::string &b) { return a.empty() ? b : a + " " + b; });
+    fprintf(stderr, "[DEBUG] Client %d (len: %d) request: %s\n", conn->fd, len, result.c_str());
 
-    // TODO: Don't we need to check if conn->outgoing is > 0 to confirm response exist?
+    Response response;
+    process_request(command, response);
+    create_response(response, conn->outgoing);
+    // print_response(conn->outgoing);
+    fprintf(stderr, "[DEBUG] outgoing data (size=%lu): ", conn->outgoing.size());
+    for (size_t i = 0; i < conn->outgoing.size(); i++) {
+        fprintf(stderr, "%02X ", conn->outgoing[i]);
+    }
+    fprintf(stderr, "\n");
+
     // Application logic is done, remove the request message
     buffer_consume(conn->incoming, kHeaderSize + len);
-    conn->want_write = true;
+    // conn->want_write = true;
     return true;
 }
 
