@@ -13,65 +13,43 @@
 
 #include <numeric>
 #include <string>
-#include <unordered_map>
 
 #include "cacheX_protocol.hpp"
+#include "common.hpp"
+#include "hashmap.hpp"
 
-static std::vector<Conn *> fd2conn;
+static struct {
+    HMap db;
+    std::vector<Conn *> fd2conn;
+} g_data;
 
-// TODO: Remove this
-static std::unordered_map<std::string, std::string> g_data;
+struct LookupKey {
+    struct HNode node;
+    std::string key;
+};
 
-typedef struct KeyValue {
-    char *key;
-    char *value;
-    struct KeyValue *next;
-} KeyValue;
+struct Entry {
+    struct HNode node;
+    std::string key;
+    std::string str;
+};
 
-KeyValue *hash_table[HASH_TABLE_SIZE] = {nullptr};
-
-// Hash function (djb2 algorithm)
-unsigned long hash_function(const char *str) {
-    unsigned long hash = 5381;
-    int c;
-    while ((c = *str++)) {
-        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-    }
-    return hash % HASH_TABLE_SIZE;
+static Entry *entry_new() {
+    Entry *ent = new Entry();
+    return ent;
 }
 
-void store_set_command(const char *key, const char *value) {
-    unsigned long index = hash_function(key);
-
-    KeyValue *new_pair = (KeyValue *)malloc(sizeof(KeyValue));
-    if (!new_pair) {
-        fprintf(stderr, "[ERROR] Memory allocation failed for KeyValue\n");
-        return;
-    }
-
-    new_pair->key = strdup(key);
-    new_pair->value = strdup(value);
-    if (!new_pair->key || !new_pair->value) {
-        fprintf(stderr, "[ERROR] Memory allocation failed for key/value\n");
-        free(new_pair);
-        return;
-    }
-
-    new_pair->next = hash_table[index];
-    hash_table[index] = new_pair;
+static void entry_del(Entry *ent) {
+    // if (ent->type == T_ZSET) {
+    //     zset_clear(&ent->zset);
+    // }
+    delete ent;
 }
 
-const char *fetch_get_command(const char *key) {
-    unsigned long index = hash_function(key);
-    KeyValue *entry = hash_table[index];
-
-    while (entry) {
-        if (strcmp(entry->key, key) == 0) {
-            return entry->value;
-        }
-        entry = entry->next;
-    }
-    return nullptr;
+static bool entry_eq(HNode *node, HNode *key) {
+    struct Entry *ent = container_of(node, struct Entry, node);
+    struct LookupKey *keydata = container_of(key, struct LookupKey, node);
+    return ent->key == keydata->key;
 }
 
 static void msg(int line_number, const char *format, ...) {
@@ -108,18 +86,39 @@ static int set_nonblocking(int sockfd) {
 }
 
 static void process_request(std::vector<std::string> &cmd, Response &out) {
+    LookupKey key;
     if (cmd.size() == 2 && cmd[0] == "GET") {
-        auto it = g_data.find(cmd[1]);
-        if (it == g_data.end()) {
+        key.key.swap(cmd[1]);
+        key.node.hcode = str_hash((uint8_t *)key.key.data(), key.key.size());
+        HNode *node = g_data.db.lookup(&key.node, &entry_eq);
+        if (!node) {
             out.status = RES_NX;
             return;
         } else {
-            out.data.assign(it->second.begin(), it->second.end());
+            Entry *ent = container_of(node, Entry, node);
+            out.data.assign(ent->str.begin(), ent->str.end());
         }
     } else if (cmd.size() == 3 && cmd[0] == "SET") {
-        g_data[cmd[1]] = std::move(cmd[2]);
+        key.key.swap(cmd[1]);
+        key.node.hcode = str_hash((uint8_t *)key.key.data(), key.key.size());
+        HNode *node = g_data.db.lookup(&key.node, &entry_eq);
+        if (node) {
+            Entry *ent = container_of(node, Entry, node);
+            ent->str.swap(cmd[2]);
+        } else {
+            Entry *ent = entry_new();
+            ent->key.swap(key.key);
+            ent->node.hcode = key.node.hcode;
+            ent->str.swap(cmd[2]);
+            g_data.db.insert(&ent->node);
+        }
     } else if (cmd.size() == 2 && cmd[0] == "DEL") {
-        g_data.erase(cmd[1]);
+        key.key.swap(cmd[1]);
+        key.node.hcode = str_hash((uint8_t *)key.key.data(), key.key.size());
+        HNode *node = g_data.db.hm_delete(&key.node, &entry_eq);
+        if (node) {
+            entry_del(container_of(node, Entry, node));
+        }
     } else {
         out.status = RES_ERR;
         fprintf(stderr, "[ERROR] Invalid command.\n");
@@ -317,15 +316,15 @@ void start_server() {
 
                     set_nonblocking(client_fd);
 
-                    if (fd2conn.size() <= (size_t)client_fd) {
-                        fd2conn.resize(client_fd + 1);
+                    if (g_data.fd2conn.size() <= (size_t)client_fd) {
+                        g_data.fd2conn.resize(client_fd + 1);
                     }
-                    if (fd2conn[client_fd] != nullptr) {
+                    if (g_data.fd2conn[client_fd] != nullptr) {
                         fprintf(stderr,
                                 "[WARNING] Reusing file descriptor %d for new connection.\n",
                                 client_fd);
                     }
-                    fd2conn[client_fd] = new Conn{client_fd, true, false, false, {}, {}};
+                    g_data.fd2conn[client_fd] = new Conn{client_fd, true, false, false, {}, {}};
                     event.events = EPOLLIN | EPOLLET;
                     event.data.fd = client_fd;
                     epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &event);
@@ -338,7 +337,7 @@ void start_server() {
                     continue;
                 }
 
-                Conn *conn = fd2conn[fd];
+                Conn *conn = g_data.fd2conn[fd];
                 if (events[i].events & EPOLLIN) {
                     handle_read(conn);
                 }
@@ -348,7 +347,7 @@ void start_server() {
                 if (conn->want_close) {
                     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn->fd, nullptr);
                     close(conn->fd);
-                    fd2conn[conn->fd] = nullptr;
+                    g_data.fd2conn[conn->fd] = nullptr;
                     delete conn;
                 }
             }

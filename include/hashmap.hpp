@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 constexpr size_t kRehasingWork = 128;
+constexpr size_t kMaxLoadFactor = 8;
 
 struct HNode {
     HNode *next = nullptr;
@@ -75,6 +76,17 @@ struct HTab {
         return node;
     }
 
+    bool foreach (bool (*f)(HNode *, void *), void *arg) {
+        for (size_t i = 0; this->mask != 0 && i <= this->mask; i++) {
+            for (HNode *node = this->tab[i]; node != nullptr; node = node->next) {
+                if (!f(node, arg)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
    private:
     size_t get_position(uint64_t hcode) {
         // Example: If hcode is 7 ans mask is 3 (it means 4 nodes)
@@ -89,12 +101,51 @@ struct HMap {
     HTab older;
     size_t migrate_pos = 0;
 
-    HNode *lookup(HNode *key, bool (*eq)(HNode *, HNode *));
-    void insert(HNode *node);
-    HNode *hm_delete(HNode *key, bool (*eq)(HNode *, HNode *));
-    void clear();
-    size_t size();
-    void foreach (bool (*f)(HNode *, void *), void *arg);
+    HNode *lookup(HNode *key, bool (*eq)(HNode *, HNode *)) {
+        help_rehashing();
+        HNode **from = this->newer.lookup(key, eq);
+        if (!from) {
+            from = this->older.lookup(key, eq);
+        }
+        return from ? *from : nullptr;
+    }
+
+    void insert(HNode *node) {
+        if (!this->newer.tab) {
+            this->newer.init(4);
+        }
+        this->newer.insert(node);
+
+        if (!this->older.tab) {
+            size_t threshold = (this->newer.mask + 1) * kMaxLoadFactor;
+            if (this->newer.size >= threshold) {
+                trigger_rehashing();
+            }
+        }
+        help_rehashing();
+    }
+
+    HNode *hm_delete(HNode *key, bool (*eq)(HNode *, HNode *)) {
+        help_rehashing();
+        if (HNode **from = this->newer.lookup(key, eq)) {
+            return this->newer.detach(from);
+        }
+        if (HNode **from = this->older.lookup(key, eq)) {
+            return this->older.detach(from);
+        }
+        return nullptr;
+    }
+
+    void clear() {
+        free(this->newer.tab);
+        free(this->older.tab);
+    }
+
+    size_t size() { return this->newer.size + this->older.size; }
+
+    void foreach (bool (*f)(HNode *, void *), void *arg) {
+        this->newer.foreach (f, arg) && this->older.foreach (f, arg);
+    }
 
    private:
     void help_rehashing() {
@@ -115,6 +166,13 @@ struct HMap {
             free(this->older.tab);
             this->older = HTab{};
         }
+    }
+
+    void trigger_rehashing() {
+        assert(this->older.tab == nullptr);
+        this->older = this->newer;
+        this->newer.init((this->newer.mask + 1) * 2);
+        this->migrate_pos = 0;
     }
 };
 
